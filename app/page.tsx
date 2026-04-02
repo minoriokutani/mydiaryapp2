@@ -1,10 +1,16 @@
 'use client';
 import { useState, useEffect } from 'react';
+// 🛠️ 読み込み方法をより確実な形に変更しました
 import { createClient } from '@supabase/supabase-js';
 
+// 🛠️ 環境変数が正しく読み込めているかチェックする仕組みを追加
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+// URLが空の状態でcreateClientを呼ぶとエラーで真っ白になるため、判定を入れます
+const supabase = (supabaseUrl && supabaseAnonKey) 
+  ? createClient(supabaseUrl, supabaseAnonKey) 
+  : null;
 
 export default function Home() {
   const [content, setContent] = useState('');
@@ -15,7 +21,8 @@ export default function Home() {
   const [showConfirm, setShowConfirm] = useState(false);
 
   const fetchEntries = async () => {
-    if (!supabaseUrl || !supabaseAnonKey) return;
+    // 🛠️ supabaseが初期化されていない場合は何もしない
+    if (!supabase) return;
     const { data, error } = await supabase.from('diary_entries').select('*').order('created_at', { ascending: false });
     if (!error && data) setEntries(data);
   };
@@ -24,11 +31,10 @@ export default function Home() {
     fetchEntries();
   }, []);
 
-  // 🛠️ 自分の最新の投稿のインデックスを探す
   const myLastIndex = entries.findIndex(e => e.author === author);
 
   const handlePost = async () => {
-    if (!content || !author) return;
+    if (!content || !author || !supabase) return;
     setLoading(true);
     const { error } = await supabase.from('diary_entries').insert([{ content, author }]);
     if (!error) { setContent(''); fetchEntries(); }
@@ -36,10 +42,20 @@ export default function Home() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('データを完全消去します。よろしいですか？')) return;
+    if (!confirm('データを完全消去します。よろしいですか？') || !supabase) return;
     await supabase.from('diary_entries').delete().eq('id', id);
     fetchEntries();
   };
+
+  // 🛠️ もし環境変数が設定されていない場合、真っ白ではなく警告を出す（デバッグ用）
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return (
+      <div className="min-h-screen bg-black text-red-500 p-10 font-black">
+        <h1>⚠️ 接続エラー</h1>
+        <p>Vercelの環境変数（URLまたはKey）が正しく設定されていない可能性があります。</p>
+      </div>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-[#FFD700] p-4 md:p-8 text-black font-sans pb-20">
@@ -76,7 +92,6 @@ export default function Home() {
                 {isDevMode ? "🛠️ 管理者メニュー稼働中" : `${author}さんの講義録`}
               </h2>
               {entries.map((entry, index) => {
-                // 🛠️ ロジック修正：自分の最新投稿（myLastIndex）より新しい（indexが小さい）他人の投稿を隠す
                 const shouldBlur = !isDevMode && myLastIndex !== -1 && index < myLastIndex && entry.author !== author;
 
                 return (
